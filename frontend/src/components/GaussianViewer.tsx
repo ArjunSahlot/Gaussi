@@ -46,7 +46,7 @@ export function GaussianViewer({ scene, background, quality, resetToken }: Props
           addSplatScene: (path: string, options?: Record<string, unknown>) => Promise<void>;
           start: () => void;
           stop?: () => void;
-          dispose?: () => void;
+          dispose?: () => void | Promise<void>;
           removeSplatScenes?: () => Promise<void>;
         }
       | undefined;
@@ -56,10 +56,10 @@ export function GaussianViewer({ scene, background, quality, resetToken }: Props
 
     // Monkey-patch removeChild to gracefully handle disjoint nodes during fast unmounts
     const originalRemoveChild = container.removeChild.bind(container);
-    container.removeChild = (node: Node) => {
+    container.removeChild = <T extends Node>(node: T): T => {
       try {
         if (node.parentNode === container) {
-          return originalRemoveChild(node);
+          return originalRemoveChild(node) as T;
         }
       } catch (err) {
         console.warn("Handled inner removeChild error", err);
