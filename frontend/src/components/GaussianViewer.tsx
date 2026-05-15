@@ -68,7 +68,7 @@ export function GaussianViewer({ scene, background, quality, resetToken }: Props
           ...cameraByQuality[quality]
         });
 
-        await viewer.addSplatScene(scene.plyUrl, {
+        await viewer.addSplatScene(scene!.plyUrl, {
           progressiveLoad: true,
           showLoadingUI: false,
           splatAlphaRemovalThreshold: quality === "fast" ? 10 : 5
