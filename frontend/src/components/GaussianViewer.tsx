@@ -51,7 +51,10 @@ export function GaussianViewer({ scene, background, quality, resetToken }: Props
         }
       | undefined;
 
-    mount.replaceChildren();
+    const container = document.createElement("div");
+    container.style.cssText = "position: absolute; inset: 0; width: 100%; height: 100%;";
+    mount.replaceChildren(container);
+
     setStatus("loading");
     setError("");
 
@@ -61,7 +64,7 @@ export function GaussianViewer({ scene, background, quality, resetToken }: Props
         if (disposed) return;
         
         viewer = new GaussianSplats3D.Viewer({
-          rootElement: mount,
+          rootElement: container,
           cameraUp: [0, -1, 0.4],
           initialCameraPosition: [2.8, -4.2, 2.2],
           initialCameraLookAt: [0, 0, 0.2],
@@ -100,7 +103,7 @@ export function GaussianViewer({ scene, background, quality, resetToken }: Props
         } catch (err) {
           console.warn("Cleanup error", err);
         }
-        mount?.replaceChildren();
+        container.remove();
       });
     };
   }, [scene, quality, resetToken]);
