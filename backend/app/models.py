@@ -5,7 +5,7 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 
-JobStatus = Literal["queued", "running", "completed", "failed"]
+JobStatus = Literal["queued", "running", "completed", "failed", "canceling", "canceled"]
 SceneSourceKind = Literal["ply_upload", "video_conversion"]
 
 
@@ -33,8 +33,41 @@ class JobResponse(BaseModel):
     error: str | None = None
     scene: SceneResponse | None = None
     logUrl: str | None = None
+    logsUrl: str
+    eventsUrl: str
+    currentStep: str | None = None
+    currentStepIndex: int = 0
+    totalSteps: int = 0
+    startedAt: str | None = None
+    finishedAt: str | None = None
+    stepStartedAt: str | None = None
+    lastHeartbeatAt: str | None = None
+    lastLogLine: str | None = None
+    cancelRequested: bool = False
+    activeProcessPid: int | None = None
     createdAt: str
     updatedAt: str
+
+
+class JobEventResponse(BaseModel):
+    id: int
+    level: str
+    message: str
+    stepLabel: str | None = None
+    createdAt: str
+
+
+class JobLogFileResponse(BaseModel):
+    name: str
+    sizeBytes: int
+    updatedAt: str
+    url: str
+
+
+class JobLogsResponse(BaseModel):
+    files: list[JobLogFileResponse]
+    activeLogName: str | None = None
+    tail: str = ""
 
 
 class UploadLimitResponse(BaseModel):

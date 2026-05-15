@@ -1,4 +1,15 @@
-import { Box, Check, CircleDot, Search } from "lucide-react";
+import {
+  Badge,
+  Group,
+  ScrollArea,
+  Stack,
+  Text,
+  TextInput,
+  ThemeIcon,
+  Title,
+  UnstyledButton
+} from "@mantine/core";
+import { Box, Check, Search } from "lucide-react";
 import { useMemo, useState } from "react";
 
 import type { Scene } from "../types";
@@ -10,6 +21,12 @@ type Props = {
   onSelect: (scene: Scene) => void;
 };
 
+function sourceLabel(scene: Scene): string {
+  if (scene.sourceKind === "video_conversion") return "Video";
+  if (scene.sourceKind === "local") return "Local";
+  return "PLY";
+}
+
 export function SceneRail({ scenes, selectedSceneId, onSelect }: Props) {
   const [query, setQuery] = useState("");
   const filtered = useMemo(() => {
@@ -19,49 +36,60 @@ export function SceneRail({ scenes, selectedSceneId, onSelect }: Props) {
   }, [query, scenes]);
 
   return (
-    <section className="panel library-panel">
-      <div className="panel-heading">
+    <Stack h="100%" gap="sm">
+      <Group justify="space-between" align="end">
         <div>
-          <span className="eyebrow">Library</span>
-          <h2>{scenes.length} scenes</h2>
+          <Text size="xs" fw={800} c="cyan.4" tt="uppercase">
+            Library
+          </Text>
+          <Title order={3}>{scenes.length} scenes</Title>
         </div>
-      </div>
-      <label className="search-field">
-        <Search size={16} />
-        <input
-          value={query}
-          onChange={(event) => setQuery(event.target.value)}
-          placeholder="Search scenes"
-        />
-      </label>
-      <div className="scene-list">
-        {filtered.map((scene) => {
-          const selected = scene.id === selectedSceneId;
-          return (
-            <button
-              key={scene.id}
-              className={`scene-row ${selected ? "is-selected" : ""}`}
-              type="button"
-              onClick={() => onSelect(scene)}
-            >
-              <span className="scene-icon">{selected ? <Check size={16} /> : <Box size={16} />}</span>
-              <span className="scene-copy">
-                <strong>{scene.name}</strong>
-                <span>
-                  {scene.sourceKind === "video_conversion" ? "Video" : scene.sourceKind === "local" ? "Local" : "PLY"}
-                  {" / "}
-                  {formatBytes(scene.sizeBytes)}
-                </span>
-              </span>
-              <span className="scene-date">
-                <CircleDot size={10} />
-                {formatDate(scene.createdAt)}
-              </span>
-            </button>
-          );
-        })}
-        {filtered.length === 0 && <p className="empty-copy">No scenes match that search.</p>}
-      </div>
-    </section>
+      </Group>
+      <TextInput
+        leftSection={<Search size={16} />}
+        placeholder="Search scenes"
+        value={query}
+        onChange={(event) => setQuery(event.currentTarget.value)}
+      />
+      <ScrollArea flex={1} offsetScrollbars>
+        <Stack gap="xs" pr="xs">
+          {filtered.map((scene) => {
+            const selected = scene.id === selectedSceneId;
+            return (
+              <UnstyledButton
+                key={scene.id}
+                className="scene-button"
+                data-selected={selected || undefined}
+                onClick={() => onSelect(scene)}
+              >
+                <Group wrap="nowrap" gap="sm">
+                  <ThemeIcon variant={selected ? "filled" : "light"} color={selected ? "green" : "gray"}>
+                    {selected ? <Check size={16} /> : <Box size={16} />}
+                  </ThemeIcon>
+                  <Stack gap={2} flex={1} miw={0}>
+                    <Group gap={6} wrap="nowrap">
+                      <Text fw={700} truncate>
+                        {scene.name}
+                      </Text>
+                      <Badge size="xs" variant="light">
+                        {sourceLabel(scene)}
+                      </Badge>
+                    </Group>
+                    <Text size="xs" c="dimmed" truncate>
+                      {formatBytes(scene.sizeBytes)} / {formatDate(scene.createdAt)}
+                    </Text>
+                  </Stack>
+                </Group>
+              </UnstyledButton>
+            );
+          })}
+          {filtered.length === 0 ? (
+            <Text size="sm" c="dimmed" ta="center" py="md">
+              No scenes match that search.
+            </Text>
+          ) : null}
+        </Stack>
+      </ScrollArea>
+    </Stack>
   );
 }

@@ -31,10 +31,15 @@ export function GaussianViewer({ scene, background, quality, resetToken }: Props
   const mountRef = useRef<HTMLDivElement | null>(null);
   const [status, setStatus] = useState<ViewerStatus>("idle");
   const [error, setError] = useState<string>("");
+  const sceneId = scene?.id ?? "";
+  const sceneName = scene?.name ?? "";
+  const sceneUrl = scene?.plyUrl ?? "";
+  const forcePlyFormat =
+    scene?.sourceKind === "local" || sceneUrl.startsWith("blob:") || sceneUrl.toLowerCase().includes(".ply");
 
   useEffect(() => {
     const mount = mountRef.current;
-    if (!mount || !scene) {
+    if (!mount || !sceneUrl) {
       setStatus("idle");
       return;
     }
@@ -88,7 +93,8 @@ export function GaussianViewer({ scene, background, quality, resetToken }: Props
           ...cameraByQuality[quality]
         });
 
-        await viewer.addSplatScene(scene!.plyUrl, {
+        await viewer.addSplatScene(sceneUrl, {
+          format: forcePlyFormat ? GaussianSplats3D.SceneFormat.Ply : undefined,
           progressiveLoad: true,
           showLoadingUI: false,
           splatAlphaRemovalThreshold: quality === "fast" ? 10 : 5
@@ -123,7 +129,7 @@ export function GaussianViewer({ scene, background, quality, resetToken }: Props
         container.remove();
       });
     };
-  }, [scene, quality, resetToken]);
+  }, [sceneId, sceneUrl, forcePlyFormat, quality, resetToken]);
 
   return (
     <section className={`viewer-surface viewer-${background}`}>
@@ -137,7 +143,7 @@ export function GaussianViewer({ scene, background, quality, resetToken }: Props
       {scene && status === "loading" && (
         <div className="viewer-state">
           <span className="loader" />
-          <p>Loading {scene.name}</p>
+          <p>Loading {sceneName}</p>
         </div>
       )}
       {scene && status === "failed" && (

@@ -48,6 +48,7 @@ class Storage:
                 )
                 """
             )
+            self._ensure_job_columns(conn)
             conn.execute(
                 """
                 CREATE TABLE IF NOT EXISTS scenes (
@@ -61,6 +62,41 @@ class Storage:
                 )
                 """
             )
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS job_events (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    job_id TEXT NOT NULL,
+                    level TEXT NOT NULL,
+                    message TEXT NOT NULL,
+                    step_label TEXT,
+                    created_at TEXT NOT NULL
+                )
+                """
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_job_events_job_id_created_at "
+                "ON job_events(job_id, created_at)"
+            )
+
+    def _ensure_job_columns(self, conn: sqlite3.Connection) -> None:
+        existing = {row["name"] for row in conn.execute("PRAGMA table_info(jobs)").fetchall()}
+        columns = {
+            "current_step": "TEXT",
+            "current_step_index": "INTEGER NOT NULL DEFAULT 0",
+            "total_steps": "INTEGER NOT NULL DEFAULT 0",
+            "current_log_path": "TEXT",
+            "last_log_line": "TEXT",
+            "started_at": "TEXT",
+            "finished_at": "TEXT",
+            "step_started_at": "TEXT",
+            "last_heartbeat_at": "TEXT",
+            "cancel_requested": "INTEGER NOT NULL DEFAULT 0",
+            "active_process_pid": "INTEGER",
+        }
+        for name, definition in columns.items():
+            if name not in existing:
+                conn.execute(f"ALTER TABLE jobs ADD COLUMN {name} {definition}")
 
     def _connect(self) -> sqlite3.Connection:
         conn = sqlite3.connect(self.settings.db_path, check_same_thread=False)
@@ -76,9 +112,10 @@ class Storage:
                 """
                 INSERT INTO jobs (
                     id, status, source_file_name, source_path, workspace_path, progress_label,
+                    current_step, current_step_index, total_steps, cancel_requested,
                     created_at, updated_at
                 )
-                VALUES (?, 'queued', ?, ?, ?, 'Waiting for a worker', ?, ?)
+                VALUES (?, 'queued', ?, ?, ?, 'Waiting for a worker', NULL, 0, 0, 0, ?, ?)
                 """,
                 (
                     job_id,
@@ -92,6 +129,7 @@ class Storage:
         job = self.get_job(job_id)
         if job is None:
             raise RuntimeError("Failed to create job")
+        self.record_event(job_id, "info", "Job queued")
         return job
 
     def update_job(self, job_id: str, **fields: Any) -> dict[str, Any]:
@@ -125,6 +163,72 @@ class Storage:
                 (limit,),
             ).fetchall()
         return [dict(row) for row in rows]
+
+    def reset_job_for_retry(self, job_id: str) -> dict[str, Any]:
+        timestamp = now_iso()
+        with self._lock, self._connect() as conn:
+            conn.execute(
+                """
+                UPDATE jobs
+                SET status = 'queued',
+                    progress_label = 'Waiting for a worker',
+                    error = NULL,
+                    output_path = NULL,
+                    scene_id = NULL,
+                    current_step = NULL,
+                    current_step_index = 0,
+                    total_steps = 0,
+                    current_log_path = NULL,
+                    last_log_line = NULL,
+                    started_at = NULL,
+                    finished_at = NULL,
+                    step_started_at = NULL,
+                    last_heartbeat_at = NULL,
+                    cancel_requested = 0,
+                    active_process_pid = NULL,
+                    updated_at = ?
+                WHERE id = ?
+                """,
+                (timestamp, job_id),
+            )
+        self.record_event(job_id, "info", "Job requeued")
+        job = self.get_job(job_id)
+        if job is None:
+            raise KeyError(job_id)
+        return job
+
+    def record_event(
+        self,
+        job_id: str,
+        level: str,
+        message: str,
+        step_label: str | None = None,
+    ) -> dict[str, Any]:
+        timestamp = now_iso()
+        with self._lock, self._connect() as conn:
+            cursor = conn.execute(
+                """
+                INSERT INTO job_events (job_id, level, message, step_label, created_at)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (job_id, level, message, step_label, timestamp),
+            )
+            event_id = cursor.lastrowid
+            row = conn.execute("SELECT * FROM job_events WHERE id = ?", (event_id,)).fetchone()
+        return dict(row)
+
+    def list_job_events(self, job_id: str, limit: int = 100) -> list[dict[str, Any]]:
+        with self._lock, self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT * FROM job_events
+                WHERE job_id = ?
+                ORDER BY id DESC
+                LIMIT ?
+                """,
+                (job_id, limit),
+            ).fetchall()
+        return [dict(row) for row in reversed(rows)]
 
     def jobs_with_status(self, statuses: Iterable[str]) -> list[dict[str, Any]]:
         status_list = list(statuses)

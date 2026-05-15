@@ -1,54 +1,62 @@
-import { UploadCloud } from "lucide-react";
-import { useRef, useState } from "react";
+import { Group, Stack, Text } from "@mantine/core";
+import { Dropzone } from "@mantine/dropzone";
+import { FileUp, UploadCloud, X } from "lucide-react";
 
 type Props = {
   disabled?: boolean;
   maxUploadMb?: number;
   onFiles: (files: File[]) => void;
+  onReject?: (message: string) => void;
 };
 
-export function UploadDropzone({ disabled = false, maxUploadMb, onFiles }: Props) {
-  const inputRef = useRef<HTMLInputElement | null>(null);
-  const [isDragging, setIsDragging] = useState(false);
+const acceptedTypes = {
+  "application/octet-stream": [".ply"],
+  "model/ply": [".ply"],
+  "video/mp4": [".mp4", ".m4v"],
+  "video/quicktime": [".mov"],
+  "video/webm": [".webm"],
+  "video/x-matroska": [".mkv"],
+  "video/x-msvideo": [".avi"]
+};
 
-  function handleFiles(fileList: FileList | null) {
-    if (!fileList || disabled) return;
-    onFiles(Array.from(fileList));
-  }
-
+export function UploadDropzone({ disabled = false, maxUploadMb, onFiles, onReject }: Props) {
   return (
-    <div
-      className={`dropzone ${isDragging ? "is-dragging" : ""}`}
-      onDragOver={(event) => {
-        event.preventDefault();
-        if (!disabled) setIsDragging(true);
+    <Dropzone
+      accept={acceptedTypes}
+      disabled={disabled}
+      maxSize={(maxUploadMb ?? 1024) * 1024 ** 2}
+      multiple
+      onDrop={onFiles}
+      onReject={(rejections) => {
+        const first = rejections[0];
+        const message = first?.errors[0]?.message ?? "File rejected";
+        onReject?.(message);
       }}
-      onDragLeave={() => setIsDragging(false)}
-      onDrop={(event) => {
-        event.preventDefault();
-        setIsDragging(false);
-        handleFiles(event.dataTransfer.files);
-      }}
+      radius="sm"
+      p="md"
     >
-      <input
-        ref={inputRef}
-        type="file"
-        hidden
-        multiple
-        accept=".ply,video/mp4,video/quicktime,video/webm,video/x-matroska,video/x-msvideo"
-        onChange={(event) => handleFiles(event.target.files)}
-      />
-      <button
-        className="dropzone-button"
-        type="button"
-        disabled={disabled}
-        onClick={() => inputRef.current?.click()}
-      >
-        <UploadCloud size={18} />
-        <span>Add files</span>
-      </button>
-      <p>.ply, .mp4, .mov, .webm, .mkv</p>
-      {maxUploadMb ? <small>Limit {maxUploadMb} MB</small> : null}
-    </div>
+      <Group justify="center" gap="md" mih={110} style={{ pointerEvents: "none" }}>
+        <Dropzone.Accept>
+          <FileUp size={34} color="var(--mantine-color-green-5)" />
+        </Dropzone.Accept>
+        <Dropzone.Reject>
+          <X size={34} color="var(--mantine-color-red-5)" />
+        </Dropzone.Reject>
+        <Dropzone.Idle>
+          <UploadCloud size={34} color="var(--mantine-color-dimmed)" />
+        </Dropzone.Idle>
+        <Stack gap={2}>
+          <Text fw={700}>Drop files or click to upload</Text>
+          <Text size="sm" c="dimmed">
+            .ply scenes and video sources
+          </Text>
+          {maxUploadMb ? (
+            <Text size="xs" c="dimmed">
+              Limit {maxUploadMb} MB
+            </Text>
+          ) : null}
+        </Stack>
+      </Group>
+    </Dropzone>
   );
 }

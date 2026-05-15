@@ -1,6 +1,6 @@
 # Gaussi Frontend
 
-Vite/React app for Vercel. It can open `.ply` files immediately in-browser, upload `.ply` scenes to the backend library, upload videos for conversion, and poll conversion jobs.
+Vite/React app for Vercel. It uses Mantine for the application UI and keeps the Gaussian splat viewer as a focused custom canvas surface. It can open `.ply` files immediately in-browser, upload `.ply` scenes to the backend library, upload videos for conversion, and poll conversion jobs.
 
 ## Local run
 

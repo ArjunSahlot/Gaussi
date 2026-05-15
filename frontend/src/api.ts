@@ -1,4 +1,4 @@
-import type { ApiConfig, ConversionJob, Scene } from "./types";
+import type { ApiConfig, ConversionJob, JobEvent, JobLogs, Scene } from "./types";
 
 export const API_BASE_URL =
   (import.meta.env.VITE_API_BASE_URL as string | undefined)?.replace(/\/$/, "") ||
@@ -46,4 +46,20 @@ export function fetchJobs(): Promise<ConversionJob[]> {
 
 export function uploadVideo(file: File): Promise<ConversionJob> {
   return upload<ConversionJob>("/api/jobs", file);
+}
+
+export function cancelJob(jobId: string): Promise<ConversionJob> {
+  return request<ConversionJob>(`/api/jobs/${jobId}/cancel`, { method: "POST" });
+}
+
+export function retryJob(jobId: string): Promise<ConversionJob> {
+  return request<ConversionJob>(`/api/jobs/${jobId}/retry`, { method: "POST" });
+}
+
+export function fetchJobLogs(jobId: string): Promise<JobLogs> {
+  return request<JobLogs>(`/api/jobs/${jobId}/logs`);
+}
+
+export function fetchJobEvents(jobId: string): Promise<JobEvent[]> {
+  return request<JobEvent[]>(`/api/jobs/${jobId}/events`);
 }

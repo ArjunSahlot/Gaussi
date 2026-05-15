@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import shutil
 from contextlib import asynccontextmanager
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -12,7 +13,15 @@ from fastapi.staticfiles import StaticFiles
 
 from .config import Settings, load_settings
 from .jobs import JobQueue
-from .models import HealthResponse, JobResponse, SceneResponse, UploadLimitResponse
+from .models import (
+    HealthResponse,
+    JobEventResponse,
+    JobLogFileResponse,
+    JobLogsResponse,
+    JobResponse,
+    SceneResponse,
+    UploadLimitResponse,
+)
 from .pipeline import ConversionPipeline
 from .storage import Storage, new_id
 
@@ -83,7 +92,7 @@ def _asset_url(request: Request, absolute_path: str | Path) -> str:
 
 
 def _log_url(request: Request, job: dict[str, Any]) -> str | None:
-    log_path = Path(job["workspace_path"]) / "logs" / "06-opensplat.log"
+    log_path = _active_log_path(job)
     if not log_path.exists():
         return None
     return str(request.url_for("job_log", job_id=job["id"], log_name=log_path.name))
@@ -115,8 +124,30 @@ def job_response(request: Request, job: dict[str, Any]) -> JobResponse:
         error=job["error"],
         scene=linked_scene,
         logUrl=_log_url(request, job),
+        logsUrl=str(request.url_for("get_job_logs", job_id=job["id"])),
+        eventsUrl=str(request.url_for("get_job_events", job_id=job["id"])),
+        currentStep=job["current_step"],
+        currentStepIndex=job["current_step_index"],
+        totalSteps=job["total_steps"],
+        startedAt=job["started_at"],
+        finishedAt=job["finished_at"],
+        stepStartedAt=job["step_started_at"],
+        lastHeartbeatAt=job["last_heartbeat_at"],
+        lastLogLine=job["last_log_line"],
+        cancelRequested=bool(job["cancel_requested"]),
+        activeProcessPid=job["active_process_pid"],
         createdAt=job["created_at"],
         updatedAt=job["updated_at"],
+    )
+
+
+def job_event_response(event: dict[str, Any]) -> JobEventResponse:
+    return JobEventResponse(
+        id=event["id"],
+        level=event["level"],
+        message=event["message"],
+        stepLabel=event["step_label"],
+        createdAt=event["created_at"],
     )
 
 
@@ -148,6 +179,45 @@ async def _save_upload(upload: UploadFile, destination: Path, max_bytes: int) ->
                 raise HTTPException(status_code=413, detail="Upload exceeds configured size limit")
             output.write(chunk)
     return total
+
+
+def _job_or_404(request: Request, job_id: str) -> dict[str, Any]:
+    job = storage(request).get_job(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="Job not found")
+    return job
+
+
+def _active_log_path(job: dict[str, Any]) -> Path:
+    current = job.get("current_log_path")
+    if current:
+        return Path(current)
+    logs_dir = Path(job["workspace_path"]) / "logs"
+    if not logs_dir.exists():
+        return logs_dir / "conversion.log"
+    logs = sorted(logs_dir.glob("*.log"), key=lambda path: path.stat().st_mtime, reverse=True)
+    return logs[0] if logs else logs_dir / "conversion.log"
+
+
+def _tail_file(path: Path, lines: int) -> str:
+    if not path.exists():
+        return ""
+    byte_limit = 512 * 1024
+    size = path.stat().st_size
+    with path.open("rb") as handle:
+        handle.seek(max(size - byte_limit, 0))
+        text = handle.read().decode("utf-8", errors="replace")
+    return "\n".join(text.splitlines()[-lines:])
+
+
+def _log_file_response(request: Request, job: dict[str, Any], path: Path) -> JobLogFileResponse:
+    stat = path.stat()
+    return JobLogFileResponse(
+        name=path.name,
+        sizeBytes=stat.st_size,
+        updatedAt=datetime.fromtimestamp(stat.st_mtime, UTC).isoformat(),
+        url=str(request.url_for("job_log", job_id=job["id"], log_name=path.name)),
+    )
 
 
 @app.get("/health", response_model=HealthResponse)
@@ -216,17 +286,52 @@ async def create_job(request: Request, file: UploadFile = File(...)) -> JobRespo
 
 @app.get("/api/jobs/{job_id}", response_model=JobResponse)
 async def get_job(request: Request, job_id: str) -> JobResponse:
-    job = storage(request).get_job(job_id)
-    if job is None:
-        raise HTTPException(status_code=404, detail="Job not found")
+    return job_response(request, _job_or_404(request, job_id))
+
+
+@app.post("/api/jobs/{job_id}/cancel", response_model=JobResponse)
+async def cancel_job(request: Request, job_id: str) -> JobResponse:
+    _job_or_404(request, job_id)
+    job = queue(request).cancel(job_id)
     return job_response(request, job)
+
+
+@app.post("/api/jobs/{job_id}/retry", response_model=JobResponse)
+async def retry_job(request: Request, job_id: str) -> JobResponse:
+    job = _job_or_404(request, job_id)
+    if job["status"] in {"queued", "running", "canceling"}:
+        raise HTTPException(status_code=409, detail="Only finished jobs can be retried")
+    job = await queue(request).retry(job_id)
+    return job_response(request, job)
+
+
+@app.get("/api/jobs/{job_id}/events", response_model=list[JobEventResponse], name="get_job_events")
+async def get_job_events(request: Request, job_id: str, limit: int = 100) -> list[JobEventResponse]:
+    _job_or_404(request, job_id)
+    return [
+        job_event_response(event)
+        for event in storage(request).list_job_events(job_id, limit=max(1, min(limit, 500)))
+    ]
+
+
+@app.get("/api/jobs/{job_id}/logs", response_model=JobLogsResponse, name="get_job_logs")
+async def get_job_logs(request: Request, job_id: str, lines: int = 200) -> JobLogsResponse:
+    job = _job_or_404(request, job_id)
+    logs_dir = Path(job["workspace_path"]) / "logs"
+    log_paths = sorted(logs_dir.glob("*.log")) if logs_dir.exists() else []
+    active_log = _active_log_path(job)
+    if not active_log.exists() and log_paths:
+        active_log = log_paths[-1]
+    return JobLogsResponse(
+        files=[_log_file_response(request, job, path) for path in log_paths],
+        activeLogName=active_log.name if active_log.exists() else None,
+        tail=_tail_file(active_log, max(1, min(lines, 1000))),
+    )
 
 
 @app.get("/api/jobs/{job_id}/logs/{log_name}", name="job_log")
 async def get_job_log(request: Request, job_id: str, log_name: str) -> FileResponse:
-    job = storage(request).get_job(job_id)
-    if job is None:
-        raise HTTPException(status_code=404, detail="Job not found")
+    job = _job_or_404(request, job_id)
     logs_dir = Path(job["workspace_path"]) / "logs"
     requested = logs_dir / Path(log_name).name
     if not requested.exists() or requested.parent != logs_dir:

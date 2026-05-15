@@ -35,6 +35,8 @@ class Settings:
     frontend_origins: list[str]
     max_upload_mb: int
     job_workers: int
+    job_heartbeat_seconds: int
+    command_timeout_seconds: int
 
     ffmpeg_bin: str
     colmap_bin: str
@@ -90,6 +92,8 @@ def load_settings() -> Settings:
         frontend_origins=frontend_origins,
         max_upload_mb=_env_int("GAUSSI_MAX_UPLOAD_MB", 1024),
         job_workers=_env_int("GAUSSI_JOB_WORKERS", 1),
+        job_heartbeat_seconds=_env_int("GAUSSI_JOB_HEARTBEAT_SECONDS", 5),
+        command_timeout_seconds=_env_int("GAUSSI_COMMAND_TIMEOUT_SECONDS", 0),
         ffmpeg_bin=_env("GAUSSI_FFMPEG_BIN", "ffmpeg"),
         colmap_bin=_env("GAUSSI_COLMAP_BIN", "colmap"),
         opensplat_bin=_env("GAUSSI_OPENSLAT_BIN", "opensplat"),

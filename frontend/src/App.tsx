@@ -1,3 +1,16 @@
+import {
+  ActionIcon,
+  Alert,
+  AppShell,
+  Badge,
+  Box,
+  Group,
+  Paper,
+  SimpleGrid,
+  Stack,
+  Text,
+  Title
+} from "@mantine/core";
 import { AlertCircle, CloudOff, RefreshCw } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
@@ -38,6 +51,10 @@ export default function App() {
 
   const scenes = useMemo(() => [...localScenes, ...serverScenes], [localScenes, serverScenes]);
   const selectedScene = scenes.find((scene) => scene.id === selectedSceneId) ?? scenes[0] ?? null;
+  const totalSceneBytes = scenes.reduce((sum, scene) => sum + scene.sizeBytes, 0);
+  const activeJobCount = jobs.filter((job) =>
+    ["queued", "running", "canceling"].includes(job.status)
+  ).length;
 
   const loadServerState = useCallback(async () => {
     try {
@@ -50,7 +67,6 @@ export default function App() {
       setServerScenes(nextScenes);
       setJobs(nextJobs);
       setConfig(nextConfig);
-      setNotice("");
     } catch (caught) {
       setBackendOnline(false);
       setNotice(caught instanceof Error ? caught.message : "Backend unavailable");
@@ -64,9 +80,9 @@ export default function App() {
   useEffect(() => {
     const interval = window.setInterval(() => {
       void loadServerState();
-    }, jobs.some((job) => job.status === "queued" || job.status === "running") ? 2500 : 7000);
+    }, activeJobCount > 0 ? 2500 : 7000);
     return () => window.clearInterval(interval);
-  }, [jobs, loadServerState]);
+  }, [activeJobCount, loadServerState]);
 
   useEffect(() => {
     if (!selectedSceneId && scenes.length > 0) {
@@ -94,7 +110,6 @@ export default function App() {
         try {
           const uploaded = await uploadScene(file);
           setServerScenes((current) => [uploaded, ...current]);
-          setSelectedSceneId(uploaded.id);
           setNotice(`${uploaded.name} is in the library`);
         } catch (caught) {
           setNotice(caught instanceof Error ? caught.message : "Scene upload failed");
@@ -119,80 +134,136 @@ export default function App() {
     setSelectedSceneId(job.scene.id);
   }
 
-  const totalSceneBytes = scenes.reduce((sum, scene) => sum + scene.sizeBytes, 0);
-
   return (
-    <div className="app-shell">
-      <aside className="left-rail">
-        <div className="brand-lockup">
-          <span className="brand-mark">G</span>
-          <div>
-            <strong>Gaussi</strong>
-            <span>Gaussian scene workbench</span>
-          </div>
-        </div>
-        <SceneRail scenes={scenes} selectedSceneId={selectedScene?.id} onSelect={(scene) => setSelectedSceneId(scene.id)} />
-      </aside>
-
-      <main className="stage">
-        <header className="stage-header">
-          <div>
-            <span className="eyebrow">Viewer</span>
-            <h1>{selectedScene?.name ?? "Ready"}</h1>
-          </div>
-          <ViewerToolbar
-            background={background}
-            quality={quality}
-            onBackgroundChange={setBackground}
-            onQualityChange={setQuality}
-            onReset={() => setResetToken((value) => value + 1)}
-          />
-        </header>
-        <GaussianViewer
-          scene={selectedScene}
-          background={background}
-          quality={quality}
-          resetToken={resetToken}
-        />
-      </main>
-
-      <aside className="right-rail">
-        <section className="panel upload-panel">
-          <div className="panel-heading">
+    <AppShell
+      header={{ height: 64 }}
+      navbar={{ width: 320, breakpoint: "md" }}
+      aside={{ width: 380, breakpoint: "lg" }}
+      padding={0}
+    >
+      <AppShell.Header>
+        <Group h="100%" px="md" justify="space-between">
+          <Group gap="sm">
+            <Box className="brand-mark">G</Box>
             <div>
-              <span className="eyebrow">Input</span>
-              <h2>Upload</h2>
+              <Text fw={900} lh={1}>
+                Gaussi
+              </Text>
+              <Text size="xs" c="dimmed">
+                Gaussian scene workbench
+              </Text>
             </div>
-            <button className="icon-button" type="button" title="Refresh" onClick={() => void loadServerState()}>
+          </Group>
+          <Group gap="xs">
+            <Badge color={backendOnline ? "green" : "yellow"} variant="light">
+              {backendOnline ? "API online" : "API offline"}
+            </Badge>
+            <ActionIcon variant="default" title="Refresh" onClick={() => void loadServerState()}>
               <RefreshCw size={16} />
-            </button>
-          </div>
-          <UploadDropzone maxUploadMb={config?.maxUploadMb} onFiles={(files) => void handleFiles(files)} />
-          {notice ? (
-            <div className={`notice ${backendOnline ? "" : "notice-warning"}`}>
-              {backendOnline ? <AlertCircle size={16} /> : <CloudOff size={16} />}
-              <span>{notice}</span>
+            </ActionIcon>
+          </Group>
+        </Group>
+      </AppShell.Header>
+
+      <AppShell.Navbar p="md">
+        <SceneRail
+          scenes={scenes}
+          selectedSceneId={selectedScene?.id}
+          onSelect={(scene) => setSelectedSceneId(scene.id)}
+        />
+      </AppShell.Navbar>
+
+      <AppShell.Main>
+        <Stack h="calc(100vh - 64px)" gap={0}>
+          <Group className="stage-header" justify="space-between" wrap="nowrap">
+            <div>
+              <Text size="xs" fw={800} c="cyan.4" tt="uppercase">
+                Viewer
+              </Text>
+              <Title order={2} className="viewer-title">
+                {selectedScene?.name ?? "Ready"}
+              </Title>
             </div>
-          ) : null}
-        </section>
+            <ViewerToolbar
+              background={background}
+              quality={quality}
+              onBackgroundChange={setBackground}
+              onQualityChange={setQuality}
+              onReset={() => setResetToken((value) => value + 1)}
+            />
+          </Group>
+          <Box flex={1} mih={0}>
+            <GaussianViewer
+              scene={selectedScene}
+              background={background}
+              quality={quality}
+              resetToken={resetToken}
+            />
+          </Box>
+        </Stack>
+      </AppShell.Main>
 
-        <section className="panel stats-panel">
-          <div className="stat-line">
-            <span>Scenes</span>
-            <strong>{scenes.length}</strong>
-          </div>
-          <div className="stat-line">
-            <span>Storage</span>
-            <strong>{formatBytes(totalSceneBytes)}</strong>
-          </div>
-          <div className="stat-line">
-            <span>Backend</span>
-            <strong>{backendOnline ? "Online" : "Offline"}</strong>
-          </div>
-        </section>
+      <AppShell.Aside p="md">
+        <Stack gap="md">
+          <Paper withBorder p="md">
+            <Stack gap="sm">
+              <Group justify="space-between" align="end">
+                <div>
+                  <Text size="xs" fw={800} c="cyan.4" tt="uppercase">
+                    Input
+                  </Text>
+                  <Title order={3}>Upload</Title>
+                </div>
+              </Group>
+              <UploadDropzone
+                maxUploadMb={config?.maxUploadMb}
+                onFiles={(files) => void handleFiles(files)}
+                onReject={setNotice}
+              />
+              {notice ? (
+                <Alert
+                  color={backendOnline ? "blue" : "yellow"}
+                  icon={backendOnline ? <AlertCircle size={16} /> : <CloudOff size={16} />}
+                  onClose={() => setNotice("")}
+                  withCloseButton
+                >
+                  {notice}
+                </Alert>
+              ) : null}
+            </Stack>
+          </Paper>
 
-        <JobPanel jobs={jobs} onOpenScene={openJobScene} />
-      </aside>
-    </div>
+          <SimpleGrid cols={3} spacing="xs">
+            <Paper withBorder p="sm">
+              <Text size="xs" c="dimmed">
+                Scenes
+              </Text>
+              <Text fw={800}>{scenes.length}</Text>
+            </Paper>
+            <Paper withBorder p="sm">
+              <Text size="xs" c="dimmed">
+                Storage
+              </Text>
+              <Text fw={800}>{formatBytes(totalSceneBytes)}</Text>
+            </Paper>
+            <Paper withBorder p="sm">
+              <Text size="xs" c="dimmed">
+                Jobs
+              </Text>
+              <Text fw={800}>{activeJobCount}</Text>
+            </Paper>
+          </SimpleGrid>
+
+          <Paper withBorder p="md">
+            <JobPanel
+              jobs={jobs}
+              onOpenScene={openJobScene}
+              onRefresh={() => void loadServerState()}
+              onNotice={setNotice}
+            />
+          </Paper>
+        </Stack>
+      </AppShell.Aside>
+    </AppShell>
   );
 }

@@ -10,6 +10,9 @@
     "lint": "tsc --noEmit"
   },
   "dependencies": {
+    "@mantine/core": "^9.2.1",
+    "@mantine/dropzone": "^9.2.1",
+    "@mantine/hooks": "^9.2.1",
     "@mkkellogg/gaussian-splats-3d": "^0.4.7",
     "@vercel/analytics": "^2.0.1",
     "lucide-react": "^0.468.0",
@@ -21,6 +24,9 @@
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "@vitejs/plugin-react": "^4.3.4",
+    "postcss": "^8.4.49",
+    "postcss-preset-mantine": "^1.18.0",
+    "postcss-simple-vars": "^7.0.1",
     "typescript": "^5.7.2",
     "vite": "^6.0.0"
   }
