@@ -88,9 +88,12 @@ export function GaussianViewer({ scene, background, quality, resetToken }: Props
 
     return () => {
       disposed = true;
-      void viewer?.removeSplatScenes?.();
-      viewer?.stop?.();
-      viewer?.dispose?.();
+      try {
+        viewer?.stop?.();
+        viewer?.dispose?.();
+      } catch (e) {
+        console.warn("Viewer dispose error:", e);
+      }
       mount.replaceChildren();
     };
   }, [scene, quality, resetToken]);
