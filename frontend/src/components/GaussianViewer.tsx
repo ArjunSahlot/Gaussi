@@ -11,101 +11,93 @@ type Props = {
   resetToken: number;
 };
 
-const cameraByQuality: Record<ViewerQuality, Record<string, unknown>> = {
-  fast: {
-    sphericalHarmonicsDegree: 0,
-    sharedMemoryForWorkers: false,
-    ignoreDevicePixelRatio: true
-  },
-  balanced: {
-    sphericalHarmonicsDegree: 1,
-    sharedMemoryForWorkers: false
-  },
-  studio: {
-    sphericalHarmonicsDegree: 2,
-    sharedMemoryForWorkers: false
-  }
+const controlSettings: Record<
+  ViewerQuality,
+  { radius: number; dampening: number; minZoom: number; maxZoom: number }
+> = {
+  fast: { radius: 4.5, dampening: 0.22, minZoom: 0.15, maxZoom: 60 },
+  balanced: { radius: 5.5, dampening: 0.15, minZoom: 0.1, maxZoom: 80 },
+  studio: { radius: 6.5, dampening: 0.1, minZoom: 0.08, maxZoom: 120 }
 };
+
+function isPlyUrl(url: string, scene: Scene | null): boolean {
+  return scene?.sourceKind === "local" || url.startsWith("blob:") || url.toLowerCase().includes(".ply");
+}
 
 export function GaussianViewer({ scene, background, quality, resetToken }: Props) {
   const mountRef = useRef<HTMLDivElement | null>(null);
   const [status, setStatus] = useState<ViewerStatus>("idle");
   const [error, setError] = useState<string>("");
+  const [progress, setProgress] = useState(0);
   const sceneId = scene?.id ?? "";
   const sceneName = scene?.name ?? "";
   const sceneUrl = scene?.plyUrl ?? "";
-  const forcePlyFormat =
-    scene?.sourceKind === "local" || sceneUrl.startsWith("blob:") || sceneUrl.toLowerCase().includes(".ply");
+  const plyScene = isPlyUrl(sceneUrl, scene);
 
   useEffect(() => {
     const mount = mountRef.current;
     if (!mount || !sceneUrl) {
       setStatus("idle");
+      setProgress(0);
       return;
     }
 
-    let loadPromise: Promise<void> | null = null;
     let disposed = false;
-    let viewer:
+    let animationFrame = 0;
+    let controls:
       | {
-          addSplatScene: (path: string, options?: Record<string, unknown>) => Promise<void>;
-          start: () => void;
-          stop?: () => void;
-          dispose?: () => void | Promise<void>;
-          removeSplatScenes?: () => Promise<void>;
+          update: () => void;
+          dispose: () => void;
+          dampening: number;
+          minZoom: number;
+          maxZoom: number;
         }
       | undefined;
-
-    const container = document.createElement("div");
-    container.style.cssText = "position: absolute; inset: 0; width: 100%; height: 100%;";
-
-    // Monkey-patch removeChild to gracefully handle disjoint nodes during fast unmounts
-    const originalRemoveChild = container.removeChild.bind(container);
-    container.removeChild = <T extends Node>(node: T): T => {
-      try {
-        if (node.parentNode === container) {
-          return originalRemoveChild(node) as T;
-        }
-      } catch (err) {
-        console.warn("Handled inner removeChild error", err);
-      }
-      return node;
-    };
-
-    mount.replaceChildren(container);
+    let renderer: { resize: () => void; render: (scene: unknown, camera: unknown) => void; dispose: () => void } | undefined;
+    const canvas = document.createElement("canvas");
+    canvas.className = "gsplat-canvas";
+    mount.replaceChildren(canvas);
 
     setStatus("loading");
     setError("");
+    setProgress(0);
 
     async function load() {
       try {
-        const GaussianSplats3D = await import("@mkkellogg/gaussian-splats-3d");
+        const SPLAT = await import("gsplat");
         if (disposed) return;
-        
-        viewer = new GaussianSplats3D.Viewer({
-          rootElement: container,
-          cameraUp: [0, -1, 0.4],
-          initialCameraPosition: [2.8, -4.2, 2.2],
-          initialCameraLookAt: [0, 0, 0.2],
-          dynamicScene: true,
-          useBuiltInControls: true,
-          webXRMode: "None",
-          ...cameraByQuality[quality]
-        });
 
-        await viewer.addSplatScene(sceneUrl, {
-          format: forcePlyFormat ? GaussianSplats3D.SceneFormat.Ply : undefined,
-          progressiveLoad: true,
-          showLoadingUI: false,
-          splatAlphaRemovalThreshold: quality === "fast" ? 10 : 5
-        });
+        const splatScene = new SPLAT.Scene();
+        const camera = new SPLAT.Camera();
+        renderer = new SPLAT.WebGLRenderer(canvas);
 
-        if (disposed) {
-          viewer.dispose?.();
-          return;
+        const settings = controlSettings[quality];
+        controls = new SPLAT.OrbitControls(camera, canvas, 0.45, 0.28, settings.radius, true);
+        controls.dampening = settings.dampening;
+        controls.minZoom = settings.minZoom;
+        controls.maxZoom = settings.maxZoom;
+
+        const onProgress = (value: number) => {
+          if (!disposed) setProgress(Math.round(value * 100));
+        };
+
+        if (plyScene) {
+          await SPLAT.PLYLoader.LoadAsync(sceneUrl, splatScene, onProgress);
+        } else {
+          await SPLAT.Loader.LoadAsync(sceneUrl, splatScene, onProgress);
         }
-        viewer.start();
+
+        if (disposed) return;
         setStatus("ready");
+
+        const frame = () => {
+          if (disposed || !renderer || !controls) return;
+          controls.update();
+          renderer.resize();
+          renderer.render(splatScene, camera);
+          animationFrame = requestAnimationFrame(frame);
+        };
+        animationFrame = requestAnimationFrame(frame);
       } catch (caught) {
         if (disposed) return;
         setStatus("failed");
@@ -113,23 +105,16 @@ export function GaussianViewer({ scene, background, quality, resetToken }: Props
       }
     }
 
-    loadPromise = load();
+    void load();
 
     return () => {
       disposed = true;
-      loadPromise?.finally(() => {
-        try {
-          const res = viewer?.dispose?.();
-          if (res instanceof Promise) {
-            res.catch((err) => console.warn("Cleanup promise error", err));
-          }
-        } catch (err) {
-          console.warn("Cleanup error", err);
-        }
-        container.remove();
-      });
+      if (animationFrame) cancelAnimationFrame(animationFrame);
+      controls?.dispose();
+      renderer?.dispose();
+      canvas.remove();
     };
-  }, [sceneId, sceneUrl, forcePlyFormat, quality, resetToken]);
+  }, [sceneId, sceneUrl, plyScene, quality, resetToken]);
 
   return (
     <section className={`viewer-surface viewer-${background}`}>
@@ -143,7 +128,10 @@ export function GaussianViewer({ scene, background, quality, resetToken }: Props
       {scene && status === "loading" && (
         <div className="viewer-state">
           <span className="loader" />
-          <p>Loading {sceneName}</p>
+          <p>
+            Loading {sceneName}
+            {progress > 0 ? ` ${progress}%` : ""}
+          </p>
         </div>
       )}
       {scene && status === "failed" && (
