@@ -53,6 +53,20 @@ export function GaussianViewer({ scene, background, quality, resetToken }: Props
 
     const container = document.createElement("div");
     container.style.cssText = "position: absolute; inset: 0; width: 100%; height: 100%;";
+
+    // Monkey-patch removeChild to gracefully handle disjoint nodes during fast unmounts
+    const originalRemoveChild = container.removeChild.bind(container);
+    container.removeChild = (node: Node) => {
+      try {
+        if (node.parentNode === container) {
+          return originalRemoveChild(node);
+        }
+      } catch (err) {
+        console.warn("Handled inner removeChild error", err);
+      }
+      return node;
+    };
+
     mount.replaceChildren(container);
 
     setStatus("loading");
@@ -99,7 +113,10 @@ export function GaussianViewer({ scene, background, quality, resetToken }: Props
       disposed = true;
       loadPromise?.finally(() => {
         try {
-          viewer?.dispose?.();
+          const res = viewer?.dispose?.();
+          if (res instanceof Promise) {
+            res.catch((err) => console.warn("Cleanup promise error", err));
+          }
         } catch (err) {
           console.warn("Cleanup error", err);
         }
