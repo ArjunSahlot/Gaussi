@@ -1,0 +1,1 @@
+{"root":["./src/App.tsx","./src/api.ts","./src/main.tsx","./src/types.ts","./src/utils.ts","./src/vite-env.d.ts","./src/components/GaussianViewer.tsx","./src/components/JobPanel.tsx","./src/components/SceneRail.tsx","./src/components/UploadDropzone.tsx","./src/components/ViewerToolbar.tsx"],"errors":true,"version":"5.9.3"}

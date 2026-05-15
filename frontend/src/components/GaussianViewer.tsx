@@ -53,7 +53,7 @@ export function GaussianViewer({ scene, background, quality, resetToken }: Props
           maxZoom: number;
         }
       | undefined;
-    let renderer: { resize: () => void; render: (scene: unknown, camera: unknown) => void; dispose: () => void } | undefined;
+    let renderer: { resize: () => void; render: (scene: any, camera: any) => void; dispose: () => void } | undefined;
     const canvas = document.createElement("canvas");
     canvas.className = "gsplat-canvas";
     mount.replaceChildren(canvas);
@@ -73,9 +73,11 @@ export function GaussianViewer({ scene, background, quality, resetToken }: Props
 
         const settings = controlSettings[quality];
         controls = new SPLAT.OrbitControls(camera, canvas, 0.45, 0.28, settings.radius, true);
-        controls.dampening = settings.dampening;
-        controls.minZoom = settings.minZoom;
-        controls.maxZoom = settings.maxZoom;
+        if (controls) {
+          controls.dampening = settings.dampening;
+          controls.minZoom = settings.minZoom;
+          controls.maxZoom = settings.maxZoom;
+        }
 
         const onProgress = (value: number) => {
           if (!disposed) setProgress(Math.round(value * 100));
