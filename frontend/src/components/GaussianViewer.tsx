@@ -39,6 +39,7 @@ export function GaussianViewer({ scene, background, quality, resetToken }: Props
       return;
     }
 
+    let loadPromise: Promise<void> | null = null;
     let disposed = false;
     let viewer:
       | {
@@ -57,6 +58,8 @@ export function GaussianViewer({ scene, background, quality, resetToken }: Props
     async function load() {
       try {
         const GaussianSplats3D = await import("@mkkellogg/gaussian-splats-3d");
+        if (disposed) return;
+        
         viewer = new GaussianSplats3D.Viewer({
           rootElement: mount,
           cameraUp: [0, -1, 0.4],
@@ -74,7 +77,10 @@ export function GaussianViewer({ scene, background, quality, resetToken }: Props
           splatAlphaRemovalThreshold: quality === "fast" ? 10 : 5
         });
 
-        if (disposed) return;
+        if (disposed) {
+          viewer.dispose?.();
+          return;
+        }
         viewer.start();
         setStatus("ready");
       } catch (caught) {
@@ -84,17 +90,18 @@ export function GaussianViewer({ scene, background, quality, resetToken }: Props
       }
     }
 
-    void load();
+    loadPromise = load();
 
     return () => {
       disposed = true;
-      try {
-        viewer?.stop?.();
-        viewer?.dispose?.();
-      } catch (e) {
-        console.warn("Viewer dispose error:", e);
-      }
-      mount.replaceChildren();
+      loadPromise?.finally(() => {
+        try {
+          viewer?.dispose?.();
+        } catch (err) {
+          console.warn("Cleanup error", err);
+        }
+        mount?.replaceChildren();
+      });
     };
   }, [scene, quality, resetToken]);
 
