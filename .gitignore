@@ -1,0 +1,23 @@
+# Local environment
+.env
+.env.*
+!.env.example
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+
+# Backend
+backend/.venv/
+backend/.pytest_cache/
+backend/.ruff_cache/
+backend/**/__pycache__/
+backend/.data/
+
+# Project data
+.data/
+
+# OS/editor noise
+.DS_Store
+Thumbs.db

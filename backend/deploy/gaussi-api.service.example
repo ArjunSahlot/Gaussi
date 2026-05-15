@@ -1,0 +1,17 @@
+[Unit]
+Description=Gaussi FastAPI backend
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=gaussi
+Group=gaussi
+WorkingDirectory=/opt/gaussi/backend
+EnvironmentFile=/etc/gaussi/gaussi.env
+ExecStart=/opt/gaussi/backend/.venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
